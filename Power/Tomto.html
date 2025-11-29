@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Tomato Leaf Detector</title>
+  <link rel="stylesheet" href="style.css"> </head>
+<body>
+  <div class="container">     <h1>🍅 Tomato Leaf Disease Detection</h1>     <div class="content-box">
+      <h2>Upload / Capture Leaf Image</h2>
+      <video id="video" autoplay playsinline style="display:none;"></video>
+      <canvas id="preview" width="640" height="480"></canvas>
+      <div class="controls">
+        <input type="file" id="fileInput" accept="image/*" />
+        <button id="openCam" class="btn primary-btn">Open Camera</button>
+        <button id="snap" class="btn secondary-btn">Capture</button>
+        <button id="upload" class="btn primary-btn">Upload for Detection</button>
+      </div>
+    </div>
+    <div class="content-box">
+      <h2>Detection Result</h2>
+      <pre id="result"></pre>
+    </div>
+  </div>
+
+<script>
+// ... (Your existing JavaScript code remains here, unchanged) ...
+const video = document.getElementById('video');
+const canvas = document.getElementById('preview');
+const ctx = canvas.getContext('2d');
+const fileInput = document.getElementById('fileInput');
+let stream;
+
+// open camera
+document.getElementById('openCam').onclick = async () => {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }});
+    video.srcObject = stream;
+    video.style.display = 'block';
+    // Resize canvas to match video stream aspect ratio
+    video.onloadedmetadata = () => {
+      const ratio = video.videoWidth / video.videoHeight;
+      canvas.height = canvas.width / ratio;
+      video.play();
+    };
+  } catch(e) { alert('camera denied: '+e.message); }
+};
+
+// capture from video
+document.getElementById('snap').onclick = () => {
+  if (video.srcObject) {
+    // Set canvas size to current video size for accurate capture
+    canvas.height = canvas.width * (video.videoHeight / video.videoWidth);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    // Hide video after capture for a cleaner look
+    video.style.display = 'none';
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
+      video.srcObject = null;
+    }
+  }
+};
+
+// load file
+fileInput.onchange = (e) => {
+  // Stop camera if running
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+    video.srcObject = null;
+    video.style.display = 'none';
+  }
+
+  const file = e.target.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    // Calculate ratio to maintain aspect ratio and fit/fill canvas width
+    const ratio = img.height / img.width;
+    canvas.height = canvas.width * ratio;
+
+    // Draw image centered on canvas, filling the width
+    ctx.fillStyle='#f9f9f9'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  };
+  img.src = URL.createObjectURL(file);
+};
+
+// upload canvas image
+document.getElementById('upload').onclick = async () => {
+  // Set canvas back to a standard size for the image blob if it was resized
+  // For detection, the server might expect a consistent size, but for the blob, 
+  // its best to use the drawn content's actual dimensions. 
+  // However, toBlob uses the current canvas state.
+
+  // Indicate loading state
+  document.getElementById('result').textContent = 'Processing...';
+  document.getElementById('upload').disabled = true;
+
+  try {
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9));
+    const form = new FormData();
+    form.append('file', blob, 'capture.jpg');
+    form.append('field_id', 'field123');
+  
+    const resp = await fetch('/api/v1/detect', { method: 'POST', body: form });
+    const json = await resp.json();
+    document.getElementById('result').textContent = JSON.stringify(json, null, 2);
+  } catch (error) {
+    document.getElementById('result').textContent = 'Error during detection: ' + error.message;
+  } finally {
+    document.getElementById('upload').disabled = false;
+  }
+};
+</script>
+</body>
+</html>
